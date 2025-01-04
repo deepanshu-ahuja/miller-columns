@@ -10,6 +10,9 @@ import {
   ColumnItem,
   ColumnsData,
   onToggleParams,
+  renderItemInfo,
+  ColumnLookUpEntry,
+  itemState,
 } from "./config";
 import { getCheckedState } from "./utils";
 
@@ -34,16 +37,14 @@ export const buildColumnsRelationship = (
 
     while (currentParentKey) {
       const config = columnsConfig?.[currentParentKey];
-      if (!config) break; // Exit if no config exists for the current key
+      if (!config) break;
 
       const parentValue = item?.[currentParentKey];
       const childKey = config.directChild;
       const childValue = childKey ? item?.[childKey] : undefined;
 
-      // Build parent-child relationship if valid
       if (parentValue && childKey) {
         const key = `${currentParentKey}-${parentValue}`;
-        // Initialize key if not present
         if (!lookup[key]) {
           if (currentParentKey === rootColumn) {
             uniqueRootColumns?.push({ id: parentValue, label: parentValue });
@@ -61,14 +62,12 @@ export const buildColumnsRelationship = (
           break;
         }
         if (!lookup[key].children.find((child) => child.id === childValue)) {
-          // Add unique child value
           lookup[key].children.push({ id: childValue, label: childValue });
 
           lookup[key].count = lookup[key].children?.length ?? 0;
         }
       }
 
-      // Move to the next child in the hierarchy
       currentParentKey = childKey as EntitlementKey;
     }
   });
@@ -80,13 +79,17 @@ const isEntitlementContainsActiveParents = ({
   entitlement,
   parentColumns,
   activeEntitlement,
+}: {
+  entitlement: EntitlementLevel;
+  parentColumns?: EntitlementKey[];
+  activeEntitlement?: EntitlementLevel;
 }) => {
-  const matchesParents = parentColumns.reduce(
+  const matchesParents = parentColumns?.reduce(
     (acc, pColumn) =>
       acc && activeEntitlement?.[pColumn] === entitlement[pColumn],
     true
   );
-  return matchesParents;
+  return !!matchesParents;
 };
 
 export const checkItemExistsInEntitlement = ({
@@ -98,31 +101,39 @@ export const checkItemExistsInEntitlement = ({
 }: onToggleParams) => {
   const { parentColumns, childColumns } = columnsConfig?.[columnType] || {};
 
-  const hasItemInEntitlement = selectedEntitlements?.find(
-    (entitlement) => entitlement[columnType] === clickedItem.label
-  );
+  const hasItemInEntitlement = selectedEntitlements?.find((entitlement) => {
+    const matchesParents = isEntitlementContainsActiveParents({
+      entitlement,
+      parentColumns,
+      activeEntitlement,
+    });
 
-  console.log("has", hasItemInEntitlement);
+    if (!matchesParents) {
+      return false;
+    }
+
+    return entitlement[columnType] === clickedItem.label;
+  });
+
   if (!hasItemInEntitlement) {
     if (!parentColumns?.length) {
-      console.log("have no parents", parentColumns);
       return { hasItemInEntitlement, actionType: "add" };
     } else {
-      console.log("have  parents", parentColumns);
       const isParentWithDifferentChild =
         selectedEntitlements?.findIndex((entitlement) => {
-          // Check if parent column values match
-
           const matchesParents = isEntitlementContainsActiveParents({
             entitlement,
             parentColumns,
             activeEntitlement,
           });
 
-          // Check if a different child exists for the same parent
+          if (!matchesParents) {
+            return false;
+          }
+
           const anotherChildItem = entitlement[columnType];
 
-          return anotherChildItem && matchesParents;
+          return anotherChildItem;
         }) ?? -1;
 
       if (isParentWithDifferentChild >= 0) {
@@ -168,15 +179,12 @@ export const handleEntitlementUpdate = (
     selectedEntitlements = [],
     columnType,
   } = params || {};
-  console.log("actionMeta", actionMeta);
 
-  // Reset existing child columns based on the current column type
   const resetChildColumns = columnsConfig?.[columnType]?.childColumns?.reduce(
     (acc, childColumn) => ({ ...acc, [childColumn]: null }),
     {}
   );
 
-  // Create a new entitlement object
   const newEntitlement: EntitlementLevel = {
     ...activeEntitlement,
     [columnType]: clickedItem.label,
@@ -185,13 +193,27 @@ export const handleEntitlementUpdate = (
 
   switch (actionMeta?.actionType) {
     case "add": {
-      setSelectedEntitlements((prev) => [...prev, newEntitlement]);
+      let updatedEntitlements = [...selectedEntitlements, newEntitlement];
+      updatedEntitlements = sortEntitlements({
+        selectedEntitlements: updatedEntitlements,
+        columnsConfig,
+        rootColumn,
+      });
+
+      setSelectedEntitlements(updatedEntitlements);
       setActiveEntitlement(newEntitlement);
       break;
     }
 
     case "update": {
-      const updatedEntitlements = [...selectedEntitlements];
+      let updatedEntitlements = [...selectedEntitlements];
+
+      updatedEntitlements = sortEntitlements({
+        selectedEntitlements,
+        columnsConfig,
+        rootColumn,
+      });
+
       if (actionMeta?.index !== undefined) {
         updatedEntitlements[actionMeta.index] = newEntitlement;
       }
@@ -212,12 +234,17 @@ export const handleEntitlementUpdate = (
       setActiveEntitlement(removedEntitlement);
 
       if (!parentColumns?.length) {
-        setSelectedEntitlements((prevSelected) =>
-          prevSelected.filter(
+        setSelectedEntitlements((prevSelected) => {
+          const list = prevSelected.filter(
             (entitlementValue) =>
               entitlementValue[columnType] !== clickedItem.label
-          )
-        );
+          );
+          return sortEntitlements({
+            selectedEntitlements: list,
+            columnsConfig,
+            rootColumn,
+          });
+        });
         return;
       }
       let parentEntitlementCountInList = 0;
@@ -239,11 +266,7 @@ export const handleEntitlementUpdate = (
           return clickedItemFound && matchesParents;
         }
       );
-      console.log(
-        "itemstoremove",
-        listOfItemsToRemove,
-        parentEntitlementCountInList
-      );
+
       let updatedSelectedItems: EntitlementLevel[] = [];
       if (listOfItemsToRemove?.length === 1) {
         if (parentEntitlementCountInList > 1) {
@@ -294,6 +317,13 @@ export const handleEntitlementUpdate = (
           return !matchesParents;
         });
       }
+
+      updatedSelectedItems = sortEntitlements({
+        selectedEntitlements: updatedSelectedItems,
+        columnsConfig: columnsConfig,
+        rootColumn,
+      });
+
       setSelectedEntitlements(updatedSelectedItems);
 
       break;
@@ -308,6 +338,103 @@ const toggleSelection = (params: onToggleParams) => {
   const actionMeta = checkItemExistsInEntitlement(params);
 
   handleEntitlementUpdate(params, actionMeta);
+};
+
+export const sortEntitlementsByColumn = ({
+  entitlements,
+  sortKey,
+}: {
+  entitlements: ColumnItem[];
+  sortKey: keyof ColumnItem;
+}) => {
+  const sortedEntitlements = entitlements?.sort((entitlementA, entitlementB) =>
+    entitlementA?.[sortKey]?.localeCompare(entitlementB?.[sortKey])
+  );
+
+  return sortedEntitlements;
+};
+
+export const sortEntitlements = ({
+  selectedEntitlements,
+  columnsConfig,
+  rootColumn,
+}: {
+  selectedEntitlements: EntitlementLevel[];
+  columnsConfig: ColumnsConfig;
+  rootColumn: EntitlementKey;
+}) => {
+  if (selectedEntitlements?.length <= 1) {
+    return selectedEntitlements;
+  }
+  const recursiveSort = (
+    data: EntitlementLevel[],
+    sortKey: keyof EntitlementLevel
+  ): EntitlementLevel[] => {
+    if (!sortKey) return data;
+
+    const sortedData = [...data].sort((a, b) => {
+      const valueA = a[sortKey] || "";
+      const valueB = b[sortKey] || "";
+
+      return valueA.localeCompare(valueB);
+    });
+
+    const groupedData = sortedData.reduce((acc, item) => {
+      const key = item[sortKey] || "";
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(item);
+      return acc;
+    }, {} as Record<string, EntitlementLevel[]>);
+
+    const nextSortKey = columnsConfig[sortKey]?.directChild as
+      | keyof EntitlementLevel
+      | undefined;
+
+    if (!nextSortKey) return Object.values(groupedData).flat();
+
+    return Object.values(groupedData)
+      .map((group: EntitlementLevel[]) => recursiveSort(group, nextSortKey))
+      .flat();
+  };
+
+  return recursiveSort(selectedEntitlements, rootColumn);
+};
+
+const onRevokeSelectedEntitlement = ({
+  entitlementToRevoke,
+  userEntitlements,
+}: {
+  entitlementToRevoke: EntitlementLevel;
+  userEntitlements?: EntitlementLevel[];
+}) => {
+  const userEntitlementsToUpdate: EntitlementLevel[] = [];
+  let foundInUserEntitlement = false;
+
+  if (!userEntitlements?.length) {
+    return { foundInUserEntitlement };
+  }
+
+  const entitlementToRevokeKeys = Object.keys(
+    entitlementToRevoke
+  ) as EntitlementKey[];
+
+  userEntitlements?.forEach((userEntitlement) => {
+    const userEntitlementKeys = Object.keys(userEntitlement);
+
+    if (entitlementToRevokeKeys.length !== userEntitlementKeys.length) {
+      userEntitlementsToUpdate.push(userEntitlement);
+    } else if (
+      entitlementToRevokeKeys.every(
+        (key) => entitlementToRevoke[key] === userEntitlement[key]
+      )
+    ) {
+      foundInUserEntitlement = true;
+    } else {
+      userEntitlementsToUpdate.push(userEntitlement);
+    }
+  });
+
+  return { foundInUserEntitlement, userEntitlementsToUpdate };
 };
 
 const useMillersColumn = () => {
@@ -329,65 +456,73 @@ const useMillersColumn = () => {
     | undefined
   >();
 
-  // const updateEntitlementStates = ({
-  //   setSelectedEntitlements,
-  //   setActiveEntitlement,
-  //   metaInfo,
-  //   item,
-  //   columnsConfig,
-  //   activeEntitlement,
-  //   selectedEntitlements,
-  //   columnType,
-  // }) => {
-  //   const resetExisitingActiveChildColumns = columnsConfig?.[
-  //     columnType
-  //   ]?.childColumns?.reduce((obj, childColumn) => {
-  //     return { ...obj, [childColumn]: null };
-  //   }, {});
+  const getRenderItemInfo = ({
+    columnType,
+    itemValue,
+    haveChildColumns,
+    parentColumns,
+  }: {
+    columnType: EntitlementKey;
+    itemValue: string;
+    haveChildColumns: boolean;
+    parentColumns: EntitlementKey[];
+  }) => {
+    let state: itemState = "initial";
+    const foundEntitlement = selectedEntitlements?.find(
+      (entitlement: EntitlementLevel) => {
+        const matchesParents = parentColumns?.length
+          ? isEntitlementContainsActiveParents({
+              entitlement,
+              parentColumns,
+              activeEntitlement,
+            })
+          : true;
 
-  //   if (metaInfo?.actionType === "add") {
-  //     const entitlement = {
-  //       ...activeEntitlement,
-  //       [columnType]: item.label,
-  //       ...resetExisitingActiveChildColumns,
-  //     };
+        if (!matchesParents) {
+          return false;
+        }
 
-  //     setSelectedEntitlements((prev) => {
-  //       return [...prev, entitlement];
-  //     });
-  //     setActiveEntitlement(entitlement);
-  //   } else if (metaInfo?.actionType === "update") {
-  //     const entitlement = {
-  //       ...activeEntitlement,
-  //       [columnType]: item.label,
-  //       ...resetExisitingActiveChildColumns,
-  //     };
-  //     const updatedSelectedEntitlements = [...selectedEntitlements];
-  //     const indexToUpdate = metaInfo?.index;
-  //     updatedSelectedEntitlements[indexToUpdate] = entitlement;
-  //     setSelectedEntitlements(updatedSelectedEntitlements);
-  //     setActiveEntitlement(entitlement);
-  //   } else if (metaInfo.actionType === "setActive") {
-  //     const entitlement = {
-  //       ...activeEntitlement,
-  //       [columnType]: item.label,
-  //       ...resetExisitingActiveChildColumns,
-  //     };
-  //     setActiveEntitlement(entitlement);
-  //   } else if (metaInfo.actionType === "remove") {
-  //     const entitlement = {
-  //       ...activeEntitlement,
-  //       [columnType]: null,
-  //       ...resetExisitingActiveChildColumns,
-  //     };
-  //     setActiveEntitlement(entitlement);
-  //   }
-  // };
+        const itemsFound =
+          matchesParents && entitlement?.[columnType] === itemValue;
+        return itemsFound;
+      }
+    );
+
+    if (foundEntitlement) {
+      state = "selected";
+      if (activeEntitlement?.[columnType] === itemValue) {
+        state = "active";
+      }
+    }
+
+    const { buttonClass, checkboxClass, textClass } = renderItemInfo?.[
+      state
+    ] || {
+      buttonClass: "",
+      checkboxClass: "",
+      textClass: "",
+    };
+
+    return {
+      state,
+      buttonClass: haveChildColumns
+        ? buttonClass
+        : renderItemInfo?.["initial"]?.buttonClass,
+      checkboxClass: haveChildColumns
+        ? checkboxClass
+        : state === "active"
+        ? renderItemInfo?.["selected"]?.checkboxClass
+        : checkboxClass,
+      textClass: haveChildColumns
+        ? textClass
+        : state === "active"
+        ? renderItemInfo?.["initial"]?.textClass
+        : textClass,
+    };
+  };
+
   useEffect(() => {
-    // API to fetch data
-
     Promise.resolve(mockAllUserData).then((response) => {
-      // Example Usage
       const columnsInfo = buildColumnsRelationship(
         mockAllUserData,
         rootColumn,
@@ -399,9 +534,38 @@ const useMillersColumn = () => {
 
     Promise.resolve(mockedUserData).then((response: any) => {
       setUserData(response);
-      setSelectedEntitlements(response?.entitlements?.levels);
+      let entitlements = response?.entitlements?.levels;
+
+      entitlements = sortEntitlements({
+        selectedEntitlements: entitlements,
+        columnsConfig,
+        rootColumn,
+      });
+
+      setSelectedEntitlements(entitlements);
     });
   }, []);
+
+  const onToggleSelection = ({
+    item,
+    itemLookupInfo,
+    columnType,
+  }: {
+    item: ColumnItem;
+    itemLookupInfo: ColumnLookUpEntry;
+    columnType: EntitlementKey;
+  }) => {
+    toggleSelection({
+      columnType,
+      clickedItem: item,
+      selectedEntitlements,
+      clickedItemLookUpInfo: itemLookupInfo,
+      activeEntitlement,
+      setActiveEntitlement,
+      columnsConfig,
+      setSelectedEntitlements,
+    });
+  };
 
   return {
     columnsData,
@@ -414,9 +578,12 @@ const useMillersColumn = () => {
     activeEntitlement,
     setActiveEntitlement,
     toggleSelection,
+    getRenderItemInfo,
+    sortEntitlements,
+    sortEntitlementsByColumn,
+    onToggleSelection,
+    onRevokeSelectedEntitlement,
   };
 };
-
-// Usage
 
 export default useMillersColumn;
