@@ -72,5 +72,37 @@ export type onToggleParams = {
     React.SetStateAction<EntitlementLevel[]>
   >;
   setActiveEntitlement: React.Dispatch<React.SetStateAction<EntitlementLevel>>;
-  columnsConfig?: ColumnsConfig;
+  columnsConfig: ColumnsConfig;
 };
+
+export type millerColumnsProps = {
+  columnsData: ColumnsData;
+  rootColumn: EntitlementKey;
+  activeEntitlement: EntitlementLevel;
+  columnsConfig: ColumnConfig;
+  getRenderItemInfo: any;
+  sortEntitlementsByColumn: any;
+  onToggleSelection: any;
+};
+
+export const renderItemInfo = {
+  active: {
+    buttonClass: "-active-and-selected",
+    checkboxClass: "-checked-selected",
+    textClass: "-active-and-selected-text",
+  },
+  selected: {
+    buttonClass: "-default",
+    checkboxClass: "-expanded-checked-active",
+    textClass: "-default-text",
+  },
+  initial: {
+    buttonClass: "-default",
+    checkboxClass: "-custom-checkbox-default",
+    textClass: "-default-text",
+  },
+};
+
+export type itemState = "initial" | "selected" | "active";
+
+export const BASE_CLASS = "columns";
