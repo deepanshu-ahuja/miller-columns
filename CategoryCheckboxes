@@ -32,6 +32,47 @@ const fetchedDataMock = {
   report: ["GET", "POST"],
 };
 
+interface RequestType {
+  name: string;
+  checked: boolean;
+}
+
+interface Category {
+  category: string;
+  requestTypes: RequestType[];
+}
+
+interface PreChecked {
+  category: string;
+  requestTypes: string[];
+}
+
+/**
+ * Transform the checkbox structure back into the preChecked format.
+ */
+const transformToPreChecked = (data: Category[]): PreChecked[] => {
+  return data
+    .map((category) => {
+      // Filter only checked request types
+      const checkedRequestTypes = category.requestTypes
+        .filter((requestType) => requestType.checked)
+        .map((requestType) => requestType.name);
+
+      // Only include categories with checked request types
+      if (checkedRequestTypes.length > 0) {
+        return {
+          category: category.category,
+          requestTypes: checkedRequestTypes,
+        };
+      }
+
+      return null; // Exclude categories with no checked request types
+    })
+    .filter((item): item is PreChecked => item !== null); // Remove null values
+};
+
+
+
 // Transformation function
 const transformApiResponseNew = (
   data: Record<string, string[]>,
