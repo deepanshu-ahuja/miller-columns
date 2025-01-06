@@ -10,6 +10,62 @@ interface Category {
   requestTypes: RequestType[];
 }
 
+interface RequestType {
+  name: string;
+  checked: boolean;
+}
+
+interface Category {
+  category: string;
+  requestTypes: RequestType[];
+}
+
+interface PreChecked {
+  category: string;
+  requestTypes: string[];
+}
+
+const fetchedDataMock = {
+  category: ["GET", "PUT", "POST"],
+  app: ["GET", "PUT", "POST"],
+  users: ["GET", "PUT", "POST"],
+  report: ["GET", "POST"],
+};
+
+// Transformation function
+const transformApiResponseNew = (
+  data: Record<string, string[]>,
+  preChecked: PreChecked[]
+): Category[] => {
+  return Object.entries(data).map(([key, methods]) => {
+    // Find the pre-checked requestTypes for the current category
+    const preCheckedCategory = preChecked.find(
+      (item) => item.category === key
+    );
+
+    return {
+      category: key, // Use the key (e.g., "category", "app") as the category name
+      requestTypes: methods.map((method) => ({
+        name: method,
+        // Check if the method is in the preCheckedCategory
+        checked: preCheckedCategory?.requestTypes.includes(method) || false,
+      })),
+    };
+  });
+};
+
+// Example of pre-checked data
+const preCheckedMock: PreChecked[] = [
+  { category: "category", requestTypes: ["POST", "DELETE"] },
+  { category: "report", requestTypes: ["GET"] },
+];
+
+// Transformed data
+const mockApiResponse = transformApiResponse(fetchedDataMock, preCheckedMock);
+
+console.log(mockApiResponse);
+
+
 const transformApiResponse = (data: Record<string, string[]>): Category[] => {
   return Object.entries(data).map(([key, methods]) => ({
     category: key, // Use the key (e.g., "category", "app") as the category name
