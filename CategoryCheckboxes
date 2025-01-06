@@ -1,0 +1,106 @@
+import React, { useState } from "react";
+
+interface RequestType {
+  name: string;
+  checked: boolean;
+}
+
+interface Category {
+  category: string;
+  requestTypes: RequestType[];
+}
+
+const mockApiResponse: Category[] = [
+  {
+    category: "User",
+    requestTypes: ["GET", "POST", "DELETE"].map((type) => ({
+      name: type,
+      checked: false,
+    })),
+  },
+  {
+    category: "Admin",
+    requestTypes: ["GET", "PUT", "PATCH", "DELETE"].map((type) => ({
+      name: type,
+      checked: false,
+    })),
+  },
+];
+
+const CategoryCheckboxes: React.FC = () => {
+  const [categories, setCategories] = useState<Category[]>(mockApiResponse);
+
+  const handleParentCheckboxChange = (categoryIndex: number) => {
+    const updatedCategories = [...categories];
+    const parent = updatedCategories[categoryIndex];
+
+    // Toggle all child checkboxes based on the parent's state
+    const allChecked = parent.requestTypes.every((type) => type.checked);
+    parent.requestTypes.forEach((type) => (type.checked = !allChecked));
+
+    setCategories(updatedCategories);
+  };
+
+  const handleChildCheckboxChange = (
+    categoryIndex: number,
+    requestTypeIndex: number
+  ) => {
+    const updatedCategories = [...categories];
+    const parent = updatedCategories[categoryIndex];
+    parent.requestTypes[requestTypeIndex].checked =
+      !parent.requestTypes[requestTypeIndex].checked;
+
+    setCategories(updatedCategories);
+  };
+
+  const isParentChecked = (categoryIndex: number): boolean => {
+    const parent = categories[categoryIndex];
+    return parent.requestTypes.every((type) => type.checked);
+  };
+
+  const isParentIndeterminate = (categoryIndex: number): boolean => {
+    const parent = categories[categoryIndex];
+    const checkedCount = parent.requestTypes.filter((type) => type.checked)
+      .length;
+    return checkedCount > 0 && checkedCount < parent.requestTypes.length;
+  };
+
+  return (
+    <div>
+      {categories.map((category, categoryIndex) => (
+        <div key={category.category}>
+          {/* Parent Checkbox */}
+          <div>
+            <input
+              type="checkbox"
+              checked={isParentChecked(categoryIndex)}
+              ref={(input) =>
+                input &&
+                (input.indeterminate = isParentIndeterminate(categoryIndex))
+              }
+              onChange={() => handleParentCheckboxChange(categoryIndex)}
+            />
+            <label>{category.category}</label>
+          </div>
+          {/* Child Checkboxes */}
+          <div style={{ marginLeft: "20px" }}>
+            {category.requestTypes.map((requestType, requestTypeIndex) => (
+              <div key={requestType.name}>
+                <input
+                  type="checkbox"
+                  checked={requestType.checked}
+                  onChange={() =>
+                    handleChildCheckboxChange(categoryIndex, requestTypeIndex)
+                  }
+                />
+                <label>{requestType.name}</label>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+export default CategoryCheckboxes;
