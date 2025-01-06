@@ -10,6 +10,15 @@ interface Category {
   requestTypes: RequestType[];
 }
 
+const transformApiResponse = (data: Record<string, string[]>): Category[] => {
+  return Object.entries(data).map(([key, methods]) => ({
+    category: key, // Use the key (e.g., "category", "app") as the category name
+    requestTypes: methods.map((method) => ({
+      name: method,
+      checked: false, // Default all checkboxes to false
+    })),
+  }));
+};
 const mockApiResponse: Category[] = [
   {
     category: "User",
